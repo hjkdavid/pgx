@@ -356,11 +356,11 @@ def train(rng):
 
 if __name__ == "__main__":
     env_names = [
+        "minatar-asterix",
         "minatar-breakout",
         "minatar-freeway",
-        "minatar-space_invaders",
-        "minatar-asterix",
         "minatar-seaquest",
+        "minatar-space_invaders",
     ]
     seeds = [0, 1, 2]
 
