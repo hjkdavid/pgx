@@ -18,7 +18,8 @@ import time
 import pickle
 from omegaconf import OmegaConf
 from pydantic import BaseModel
-import wandb
+from torch.utils.tensorboard import SummaryWriter
+import os
 
 
 class PPOConfig(BaseModel):
@@ -43,7 +44,6 @@ class PPOConfig(BaseModel):
     ent_coef: float = 0.01
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
-    wandb_project: str = "pgx-minatar-ppo"
     save_model: bool = False
 
     class Config:
@@ -105,6 +105,19 @@ forward = hk.without_apply_rng(hk.transform(forward_fn))
 
 optimizer = optax.chain(optax.clip_by_global_norm(
     args.max_grad_norm), optax.adam(args.lr, eps=1e-5))
+
+if args.env_name == 'minatar-asterix':
+    env_name = 'MinAtar-Asterix-v1'
+elif args.env_name == 'minatar-breakout':
+    env_name = 'MinAtar-Breakout-v1'
+elif args.env_name == 'minatar-freeway':
+    env_name = 'MinAtar-Freeway-v1'
+elif args.env_name == 'minatar-seaquest':
+    env_name = 'MinAtar-Seaquest-v1'
+elif args.env_name == 'minatar-space_invaders':
+    env_name = 'MinAtar-SpaceInvaders-v1'
+log_dir = os.path.expanduser("~") + f'/Projects/Enc/HiPPO/logs/{-1}_{env_name}/seed{args.seed}'
+writer = SummaryWriter(log_dir)
 
 
 class Transition(NamedTuple):
@@ -332,13 +345,15 @@ def train(rng):
     tt += et - st
     rng, _rng = jax.random.split(rng)
     eval_R = evaluate(runner_state[0], _rng)
-    log = {"sec": tt, f"{args.env_name}/eval_R": float(eval_R), "steps": steps}
-    print(log)
-    wandb.log(log)
+    writer.add_scalar("Reward per Episode", float(eval_R), steps)
     st = time.time()
 
     for i in range(num_updates):
         runner_state, loss_info = jitted_update_step(runner_state)
+        writer.add_scalar("Actor Loss", float(loss_info[1][1].mean()), steps)
+        writer.add_scalar("Value Loss", float(loss_info[1][0].mean()), steps)
+        writer.add_scalar("Entropy", float(loss_info[1][2].mean()), steps)
+        writer.add_scalar("Total Loss", float(loss_info[0].mean()), steps)
         steps += args.num_envs * args.num_steps
 
         # evaluation
@@ -346,16 +361,13 @@ def train(rng):
         tt += et - st
         rng, _rng = jax.random.split(rng)
         eval_R = evaluate(runner_state[0], _rng)
-        log = {"sec": tt, f"{args.env_name}/eval_R": float(eval_R), "steps": steps}
-        print(log)
-        wandb.log(log)
+        writer.add_scalar("Reward per Episode", float(eval_R), steps)
         st = time.time()
 
     return runner_state
 
 
 if __name__ == "__main__":
-    wandb.init(project=args.wandb_project, config=args.dict())
     rng = jax.random.PRNGKey(args.seed)
     out = train(rng)
     if args.save_model:
