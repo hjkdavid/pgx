@@ -35,7 +35,7 @@ class PPOConfig(BaseModel):
     num_envs: int = 4096
     num_eval_envs: int = 100
     num_steps: int = 128
-    total_timesteps: int = 20000000
+    total_timesteps: int = 100000000
     update_epochs: int = 3
     minibatch_size: int = 4096
     gamma: float = 0.99
@@ -44,7 +44,7 @@ class PPOConfig(BaseModel):
     ent_coef: float = 0.01
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
-    save_model: bool = False
+    save_model: bool = True
 
     class Config:
         extra = "forbid"
@@ -105,19 +105,6 @@ forward = hk.without_apply_rng(hk.transform(forward_fn))
 
 optimizer = optax.chain(optax.clip_by_global_norm(
     args.max_grad_norm), optax.adam(args.lr, eps=1e-5))
-
-if args.env_name == 'minatar-asterix':
-    env_name = 'MinAtar-Asterix-v1'
-elif args.env_name == 'minatar-breakout':
-    env_name = 'MinAtar-Breakout-v1'
-elif args.env_name == 'minatar-freeway':
-    env_name = 'MinAtar-Freeway-v1'
-elif args.env_name == 'minatar-seaquest':
-    env_name = 'MinAtar-Seaquest-v1'
-elif args.env_name == 'minatar-space_invaders':
-    env_name = 'MinAtar-SpaceInvaders-v1'
-log_dir = os.path.expanduser("~") + f'/Projects/Enc/HiPPO/logs/{-1}_{env_name}/seed{args.seed}'
-writer = SummaryWriter(log_dir)
 
 
 class Transition(NamedTuple):
@@ -351,7 +338,7 @@ def train(rng):
     for i in range(num_updates):
         runner_state, loss_info = jitted_update_step(runner_state)
         writer.add_scalar("Actor Loss", float(loss_info[1][1].mean()), steps)
-        writer.add_scalar("Value Loss", float(loss_info[1][0].mean()), steps)
+        writer.add_scalar("Critic Loss", float(loss_info[1][0].mean()), steps)
         writer.add_scalar("Entropy", float(loss_info[1][2].mean()), steps)
         writer.add_scalar("Total Loss", float(loss_info[0].mean()), steps)
         steps += args.num_envs * args.num_steps
@@ -368,8 +355,49 @@ def train(rng):
 
 
 if __name__ == "__main__":
-    rng = jax.random.PRNGKey(args.seed)
-    out = train(rng)
-    if args.save_model:
-        with open(f"{args.env_name}-seed={args.seed}.ckpt", "wb") as f:
-            pickle.dump(out[0], f)
+    env_names = [
+        "minatar-breakout",
+        "minatar-freeway",
+        "minatar-space_invaders",
+        "minatar-asterix",
+        "minatar-seaquest",
+    ]
+    seeds = [0, 1, 2]
+
+    for env_name in env_names:
+        for seed in seeds:
+            # Update args to set the current environment and seed
+            args.env_name = env_name
+            args.seed = seed
+
+            # Set log directory
+            if args.env_name == 'minatar-asterix':
+                env_name_log = 'MinAtar-Asterix-v1'
+            elif args.env_name == 'minatar-breakout':
+                env_name_log = 'MinAtar-Breakout-v1'
+            elif args.env_name == 'minatar-freeway':
+                env_name_log = 'MinAtar-Freeway-v1'
+            elif args.env_name == 'minatar-seaquest':
+                env_name_log = 'MinAtar-Seaquest-v1'
+            elif args.env_name == 'minatar-space_invaders':
+                env_name_log = 'MinAtar-SpaceInvaders-v1'
+            log_dir = os.path.expanduser("~") + f'/Projects/Enc/HiPPO/logs/{-1}_{env_name_log}/seed{args.seed}'
+            writer = SummaryWriter(log_dir)
+
+            # Set the RNG seed
+            rng = jax.random.PRNGKey(args.seed)
+
+            print(f"Training {args.env_name} with seed {args.seed}")
+
+            # Run training
+            out = train(rng)
+
+            # Save the model if required
+            if args.save_model:
+                model_filename = f"{args.env_name}-seed={args.seed}.ckpt"
+                with open(model_filename, "wb") as f:
+                    pickle.dump(out[0], f)
+
+            # Close SummaryWriter
+            writer.close()
+
