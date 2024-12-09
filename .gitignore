@@ -16,3 +16,4 @@ checkpoints
 __pycache__
 tests/assets/*/*.svg
 examples/minatar-ppo/nohup.out
+examples/minatar-ppo/*.ckpt

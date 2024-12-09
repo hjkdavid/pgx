@@ -50,13 +50,7 @@ class PPOConfig(BaseModel):
         extra = "forbid"
 
 
-args = PPOConfig(**OmegaConf.to_object(OmegaConf.from_cli()))
-print(args, file=sys.stderr)
-env = pgx.make(str(args.env_name))
 
-
-num_updates = args.total_timesteps // args.num_envs // args.num_steps
-num_minibatches = args.num_envs * args.num_steps // args.minibatch_size
 
 
 class ActorCritic(hk.Module):
@@ -98,13 +92,6 @@ def forward_fn(x, is_eval=False):
     net = ActorCritic(env.num_actions, activation="tanh")
     logits, value = net(x)
     return logits, value
-
-
-forward = hk.without_apply_rng(hk.transform(forward_fn))
-
-
-optimizer = optax.chain(optax.clip_by_global_norm(
-    args.max_grad_norm), optax.adam(args.lr, eps=1e-5))
 
 
 class Transition(NamedTuple):
@@ -364,11 +351,23 @@ if __name__ == "__main__":
     ]
     seeds = [0, 1, 2]
 
+    args = PPOConfig(**OmegaConf.to_object(OmegaConf.from_cli()))
+    # print(args, file=sys.stderr)
+
+    num_updates = args.total_timesteps // args.num_envs // args.num_steps
+    num_minibatches = args.num_envs * args.num_steps // args.minibatch_size
+
     for env_name in env_names:
         for seed in seeds:
             # Update args to set the current environment and seed
             args.env_name = env_name
             args.seed = seed
+
+            env = pgx.make(str(args.env_name))
+
+            forward = hk.without_apply_rng(hk.transform(forward_fn))
+            optimizer = optax.chain(optax.clip_by_global_norm(
+                args.max_grad_norm), optax.adam(args.lr, eps=1e-5))
 
             # Set log directory
             if args.env_name == 'minatar-asterix':
